@@ -1,0 +1,1273 @@
+# KrtekStop(R) -- Ochrana zahrady pred krtky
+# HYDROTEK s.r.o. | ZaplavKrtka.cz
+# =============================================================================
+# Deklarativni Estoflow workbench pro navrh ochrany zahrady pred krtky.
+#
+# Modely:  GardenZone (zakreslena plocha), MoleMound (krtinec/point),
+#          RepellerDevice (plasic/point), FloodPoint (bod zaplaveni/point),
+#          BarrierSection (barierova sit/polyline), MoleProtConfig (kalkulator)
+# Nastroje: 5 kreslichich nastroju
+# Kalkulator: moleprotection -- 4-krokovy konfigurator s x-measured rollup
+# Agregace:  protectionBOM (cenova kalkulace), protectionSummary (prehled)
+# Pohledy:   protection-bom, protection-summary
+# Panel:     hydrotek-quote -- firemni nabidka HYDROTEK s.r.o.
+# =============================================================================
+
+app:
+  id: krtekstop-v4
+  name: "KrtekStop(R) -- Ochrana zahrady"
+  requiresSketch: true
+
+# =============================================================================
+# Models
+# =============================================================================
+models:
+
+  # --- Zahradni zona: rect/polygon -------------------------------------------
+  GardenZone:
+    x-entity: krtekstop_garden_zones
+    x-required-for-save: [project_id]
+    title: Zahradni zona
+    properties:
+      project_id: { type: [string, "null"] }
+      name: { type: string, default: 'Zahrada', title: 'Nazev zony' }
+      zoneType:
+        type: string
+        default: lawn
+        enum: [lawn, vegetable, flower, mixed]
+        title: Typ zony
+        x-options:
+          lawn:      { label: 'Travnik' }
+          vegetable: { label: 'Zeleninova zahrada' }
+          flower:    { label: 'Okrasna zahrada' }
+          mixed:     { label: 'Kombinovana' }
+      regionGeometryIds:
+        type: array
+        items: { type: string, format: geometries }
+        title: Geometrie zony
+        x-geometry-relation: { multiple: true }
+        x-geometry-types: [rect, polygon]
+    derivations:
+      area:
+        params: [instance, models, geo, geoAll, compute]
+        body: |
+          var total = 0;
+          var ids = instance.regionGeometryIds || [];
+          for (var i = 0; i < ids.length; i++) {
+            var g = geo(ids[i]);
+            if (g) total += compute.geometryArea(g);
+          }
+          return total / (1000 * 1000);
+        unit: m2
+        title: Plocha
+
+  # --- Krtinec: point marker -------------------------------------------------
+  MoleMound:
+    x-entity: krtekstop_mole_mounds
+    x-required-for-save: [project_id]
+    title: Krtinec
+    properties:
+      project_id: { type: [string, "null"] }
+      name: { type: string, default: '', title: 'Poznamka' }
+      severity:
+        type: string
+        default: fresh
+        enum: [fresh, old, unknown, quantum, warp-speed]
+        title: Aktivita krtince
+        x-options:
+          fresh:      { label: 'Cerstvy -- aktivni' }
+          old:        { label: 'Stary -- neaktivni' }
+          unknown:    { label: 'Neurceno' }
+          quantum:    { label: 'Kvantovy -- krtek tuneluje skrz casoprostor' }
+          warp-speed: { label: 'Warp krtek -- byl videt vsude najednou' }
+      pointGeometryId:
+        type: [string, "null"]
+        format: geometries
+        title: Umisteni
+        x-geometry-relation: { multiple: false }
+        x-geometry-types: [point]
+    derivations:
+      count:
+        params: [instance]
+        body: return 1;
+        unit: ks
+        title: Pocet
+
+  # --- Plasic krtku: point marker --------------------------------------------
+  RepellerDevice:
+    x-entity: krtekstop_repellers
+    x-required-for-save: [project_id]
+    title: Plasic krtku
+    properties:
+      project_id: { type: [string, "null"] }
+      name: { type: string, default: '', title: 'Poznamka' }
+      deviceType:
+        type: string
+        default: solar-sonic
+        enum: [solar-sonic, battery-sonic, vibration-stake, force-field-emitter, turbolaser, ion-pulse]
+        title: Typ plasice / obranneho systemu
+        x-options:
+          solar-sonic:         { label: 'SolarMole 300 -- solarni sonicky (350 Kc)' }
+          battery-sonic:       { label: 'VibratMole Duo -- bateriovy (220 Kc)' }
+          vibration-stake:     { label: 'EcoVib -- vibracni kolik (180 Kc)' }
+          force-field-emitter: { label: 'NovaStar SFE-1 -- sfericky generator siloveho pole (4 900 Kc)' }
+          turbolaser:          { label: 'TurboLazer Krtex-IX -- turbolarerova baterie (12 500 Kc)' }
+          ion-pulse:           { label: 'Ionovy Pulzator IM-6 -- ionovy kanon (7 800 Kc)' }
+      pointGeometryId:
+        type: [string, "null"]
+        format: geometries
+        title: Umisteni
+        x-geometry-relation: { multiple: false }
+        x-geometry-types: [point]
+    derivations:
+      count:
+        params: [instance]
+        body: return 1;
+        unit: ks
+        title: Pocet
+
+  # --- Bod zaplaveni: point marker -------------------------------------------
+  FloodPoint:
+    x-entity: krtekstop_flood_points
+    x-required-for-save: [project_id]
+    title: Bod zaplaveni krtincu
+    properties:
+      project_id: { type: [string, "null"] }
+      name: { type: string, default: '', title: 'Poznamka' }
+      floodType:
+        type: string
+        default: auto
+        enum: [auto, manual, plasma-torpedo, tractor-beam]
+        title: Typ zaplavovace / likvidacniho systemu
+        x-options:
+          auto:           { label: 'HydroMole Auto -- automaticky (2 890 Kc)' }
+          manual:         { label: 'FloodKit -- rucni sada (890 Kc)' }
+          plasma-torpedo: { label: 'AquaPlasma T-5 -- plazmovy torpedomed (8 500 Kc)' }
+          tractor-beam:   { label: 'TraktorKrtek 3000 -- traktorovy svazek (15 900 Kc)' }
+      pointGeometryId:
+        type: [string, "null"]
+        format: geometries
+        title: Umisteni
+        x-geometry-relation: { multiple: false }
+        x-geometry-types: [point]
+    derivations:
+      count:
+        params: [instance]
+        body: return 1;
+        unit: ks
+        title: Pocet
+
+  # --- Barierova sit: polyline run -------------------------------------------
+  BarrierSection:
+    x-entity: krtekstop_barriers
+    x-required-for-save: [project_id]
+    title: Barierova sit
+    properties:
+      project_id: { type: [string, "null"] }
+      name: { type: string, default: '', title: 'Usek' }
+      barrierType:
+        type: string
+        default: pe-net
+        enum: [pe-net, galvanized-net, force-barrier, transphasic-mesh, duranium-net]
+        title: Typ barieroveho systemu
+        x-options:
+          pe-net:           { label: 'PE sit 100 cm -- 45 Kc/bm' }
+          galvanized-net:   { label: 'Pozinkovana sit 50 cm -- 89 Kc/bm' }
+          force-barrier:    { label: 'NovaStar FBG-3 -- fazova barierova generátor (890 Kc/bm)' }
+          transphasic-mesh: { label: 'TransMesh ST-IV -- transphasicka sit (Star Krtek-edition) (250 Kc/bm)' }
+          duranium-net:     { label: 'DuraNorm -- duraniumova sit (ze ztroskotane lode) (180 Kc/bm)' }
+      installDepth:
+        type: number
+        default: 40
+        enum: [30, 40, 50]
+        title: Hloubka instalace
+        unit: cm
+      lineGeometryIds:
+        type: array
+        items: { type: string, format: geometries }
+        title: Trasa bariery
+        x-geometry-relation: { multiple: true }
+        x-geometry-types: [polyline, polygon]
+    derivations:
+      length:
+        params: [instance, models, geo, geoAll, compute]
+        body: |
+          var total = 0;
+          var ids = instance.lineGeometryIds || [];
+          for (var i = 0; i < ids.length; i++) {
+            var g = geo(ids[i]);
+            if (!g) continue;
+            total += compute.geometryLength(g);
+          }
+          return total / 1000;
+        unit: m
+        title: Delka trasy
+
+  # --- Kalkulator input model ------------------------------------------------
+  MoleProtConfig:
+    x-entity: krtekstop_configs
+    x-required-for-save: [project_id, name]
+    title: Konfigurace ochrany
+    description: Kalkulace ochrany zahrady pred krtky.
+    properties:
+      project_id: { type: [string, "null"] }
+      name:
+        type: string
+        default: 'Varianta A'
+        title: Nazev varianty
+
+      pointGeometryId:
+        type: [string, "null"]
+        format: geometries
+        title: Umisteni konfigurace ve vykrese
+        x-geometry-relation: { multiple: false }
+        x-geometry-types: [point]
+
+      # Krok 1 -- Zakaznik
+      clientName:
+        type: string
+        default: ''
+        title: Jmeno zakaznika
+      propertyAddress:
+        type: string
+        default: ''
+        title: Adresa nemovitosti
+
+      # Krok 2 -- Plocha a napadeni
+      gardenArea:
+        type: number
+        default: 0
+        minimum: 0
+        title: Celkova plocha zahrady
+        unit: m2
+        x-measured:
+          model: GardenZone
+          derivation: area
+          aggregate: sum
+      infestationLevel:
+        type: string
+        default: moderate
+        enum: [light, moderate, severe]
+        title: Uroven napadeni krtky
+        x-options:
+          light:    { label: 'Mirne (1-3 krtince)' }
+          moderate: { label: 'Stredni (4-10 krtincu)' }
+          severe:   { label: 'Silne (10+ krtincu)' }
+      moleMoundCount:
+        type: number
+        default: 0
+        minimum: 0
+        title: Pocet krtincu (zakresleno)
+        unit: ks
+        x-measured:
+          model: MoleMound
+          derivation: count
+          aggregate: sum
+
+      # Krok 3 -- Metody ochrany
+      useRepellers:
+        type: boolean
+        default: true
+        title: Plasice krtku
+      repellerModel:
+        type: string
+        default: solar-sonic
+        enum: [solar-sonic, battery-sonic, vibration-stake, force-field-emitter, turbolaser, ion-pulse]
+        title: Model plasice / obranneho systemu
+        x-options:
+          solar-sonic:         { label: 'SolarMole 300 -- solarni sonicky (350 Kc/ks)' }
+          battery-sonic:       { label: 'VibratMole Duo -- bateriovy (220 Kc/ks)' }
+          vibration-stake:     { label: 'EcoVib -- vibracni kolik (180 Kc/ks)' }
+          force-field-emitter: { label: 'NovaStar SFE-1 -- silove pole (4 900 Kc/ks)' }
+          turbolaser:          { label: 'TurboLazer Krtex-IX -- turbolaser (12 500 Kc/ks)' }
+          ion-pulse:           { label: 'Ionovy Pulzator IM-6 -- ionovy kanon (7 800 Kc/ks)' }
+      repellerCount:
+        type: number
+        default: 0
+        minimum: 0
+        title: Pocet plasiCu (zakresleno)
+        unit: ks
+        x-measured:
+          model: RepellerDevice
+          derivation: count
+          aggregate: sum
+
+      useBarrier:
+        type: boolean
+        default: false
+        title: Podzemni barierova sit
+      barrierType:
+        type: string
+        default: pe-net
+        enum: [pe-net, galvanized-net, force-barrier, transphasic-mesh, duranium-net]
+        title: Typ barieroveho systemu
+        x-options:
+          pe-net:           { label: 'PE sit 100 cm -- 45 Kc/bm' }
+          galvanized-net:   { label: 'Pozinkovana sit 50 cm -- 89 Kc/bm' }
+          force-barrier:    { label: 'NovaStar FBG-3 -- fazova bariera (890 Kc/bm)' }
+          transphasic-mesh: { label: 'TransMesh ST-IV -- transphasicka sit (250 Kc/bm)' }
+          duranium-net:     { label: 'DuraNorm -- duraniumova sit (180 Kc/bm)' }
+      barrierLength:
+        type: number
+        default: 0
+        minimum: 0
+        title: Delka barierove site (zakresleno)
+        unit: m
+        x-measured:
+          model: BarrierSection
+          derivation: length
+          aggregate: sum
+
+      useFlooding:
+        type: boolean
+        default: true
+        title: Automaticke zaplaveni krtincu
+      floodingType:
+        type: string
+        default: auto
+        enum: [auto, manual, plasma-torpedo, tractor-beam]
+        title: Typ zaplavovace / likvidacniho systemu
+        x-options:
+          auto:           { label: 'HydroMole Auto -- automaticky (2 890 Kc/ks)' }
+          manual:         { label: 'FloodKit -- rucni sada (890 Kc/ks)' }
+          plasma-torpedo: { label: 'AquaPlasma T-5 -- plazmovy torpedomed (8 500 Kc/ks)' }
+          tractor-beam:   { label: 'TraktorKrtek 3000 -- traktorovy svazek (15 900 Kc/ks)' }
+      floodPointCount:
+        type: number
+        default: 0
+        minimum: 0
+        title: Pocet bodu zaplaveni (zakresleno)
+        unit: ks
+        x-measured:
+          model: FloodPoint
+          derivation: count
+          aggregate: sum
+
+      # Krok 4 -- Sluzby
+      includeInstallation:
+        type: boolean
+        default: true
+        title: "Profesionalni instalace (1 200 Kc)"
+      includeAnnualService:
+        type: boolean
+        default: false
+        title: "Rocni servisni smlouva (3 600 Kc/rok)"
+
+# =============================================================================
+# Lifecycle -- seed default calculator instance
+# =============================================================================
+lifecycle:
+  initialized:
+    body: |
+      var pid = this.project.id;
+      function forProject(list) {
+        return (list || []).filter(function(r) { return r.project_id === pid; });
+      }
+
+      // === MoleMound: update existing → sci-fi severities, else create ======
+      var moundCfgs = [
+        { sev: 'quantum',    name: 'Kvantovy krtinec Alpha', geoId: 'n-Y1R6_M7rurEHYOBzkFr' },
+        { sev: 'warp-speed', name: 'Warp krtek Omega',       geoId: 'Ci2kKVG4tsIHIhLGQYDnS' },
+        { sev: 'fresh',      name: '',                        geoId: 'OChJe15bM3MIZO6Vguwvc' },
+        { sev: 'old',        name: '',                        geoId: 'kaiHyIFLCy6l9Qkpi9qjo' },
+        { sev: 'unknown',    name: '',                        geoId: '0oun-lNzbrS3OJv7IuU4h' }
+      ];
+      var exMounds = forProject(this.models.MoleMound.all.value);
+      for (var i = 0; i < moundCfgs.length; i++) {
+        var mc = moundCfgs[i];
+        var em = exMounds[i];
+        if (em) {
+          this.models.MoleMound.save({ id: em.id, project_id: pid,
+            name: mc.name, severity: mc.sev, pointGeometryId: em.pointGeometryId });
+        } else {
+          this.models.MoleMound.save({ project_id: pid,
+            name: mc.name, severity: mc.sev, pointGeometryId: mc.geoId });
+        }
+      }
+
+      // === RepellerDevice: update existing + create 2 new sci-fi devices ====
+      var repellerCfgs = [
+        { type: 'turbolaser',          name: 'TurboLazer Krtex-IX',  geoId: '0NbvEKfh9L4LzrTzIpM-k' },
+        { type: 'force-field-emitter', name: 'NovaStar SFE-1',       geoId: 'BgMw0j6fuKoe05SlPqBTI'  },
+        { type: 'ion-pulse',           name: 'Ionovy Pulzator IM-6', geoId: '_b_djWqZVtQio9LDrEW25'  }
+      ];
+      var exRepellers = forProject(this.models.RepellerDevice.all.value);
+      for (var i = 0; i < repellerCfgs.length; i++) {
+        var rc = repellerCfgs[i];
+        var er = exRepellers[i];
+        if (er) {
+          this.models.RepellerDevice.save({ id: er.id, project_id: pid,
+            name: rc.name, deviceType: rc.type, pointGeometryId: er.pointGeometryId });
+        } else {
+          this.models.RepellerDevice.save({ project_id: pid,
+            name: rc.name, deviceType: rc.type, pointGeometryId: rc.geoId });
+        }
+      }
+
+      // === FloodPoint: update to plasma-torpedo + tractor-beam ==============
+      var floodCfgs = [
+        { type: 'plasma-torpedo', name: 'AquaPlasma T-5',     geoId: 'Ci2kKVG4tsIHIhLGQYDnS' },
+        { type: 'tractor-beam',   name: 'TraktorKrtek 3000',  geoId: 'OChJe15bM3MIZO6Vguwvc' }
+      ];
+      var exFloods = forProject(this.models.FloodPoint.all.value);
+      for (var i = 0; i < floodCfgs.length; i++) {
+        var fc = floodCfgs[i];
+        var ef = exFloods[i];
+        if (ef) {
+          this.models.FloodPoint.save({ id: ef.id, project_id: pid,
+            name: fc.name, floodType: fc.type, pointGeometryId: ef.pointGeometryId });
+        } else {
+          this.models.FloodPoint.save({ project_id: pid,
+            name: fc.name, floodType: fc.type, pointGeometryId: fc.geoId });
+        }
+      }
+
+      // === BarrierSection: update to transphasic-mesh =======================
+      var exBarriers = forProject(this.models.BarrierSection.all.value);
+      if (exBarriers.length > 0) {
+        var eb = exBarriers[0];
+        this.models.BarrierSection.save({ id: eb.id, project_id: pid,
+          name: 'Transphasicka barierova sit', barrierType: 'transphasic-mesh',
+          installDepth: 50, lineGeometryIds: eb.lineGeometryIds });
+      } else {
+        this.models.BarrierSection.save({ project_id: pid,
+          name: 'Transphasicka barierova sit', barrierType: 'transphasic-mesh',
+          installDepth: 50, lineGeometryIds: ['FytvSlTBGbw9hKXrAaahN'] });
+      }
+
+      // === GardenZone: keep or create =======================================
+      var exZones = forProject(this.models.GardenZone.all.value);
+      if (exZones.length === 0) {
+        this.models.GardenZone.save({ project_id: pid, name: 'Zahrada',
+          zoneType: 'lawn', regionGeometryIds: ['7JR84Wril1n-Y1T3fSEW4'] });
+      }
+
+      // === MoleProtConfig: update to sci-fi defaults ========================
+      var exConfigs = forProject(this.models.MoleProtConfig.all.value);
+      var cfgData = {
+        project_id: pid,
+        name: 'Galakticka varianta — Demo',
+        clientName: 'Jan Novak',
+        propertyAddress: 'Zahradni 5, 370 01 Ceske Budejovice',
+        gardenArea: 0,
+        infestationLevel: 'severe',
+        moleMoundCount: 0,
+        useRepellers: true,
+        repellerModel: 'turbolaser',
+        repellerCount: 0,
+        useBarrier: true,
+        barrierType: 'transphasic-mesh',
+        barrierLength: 0,
+        useFlooding: true,
+        floodingType: 'plasma-torpedo',
+        floodPointCount: 0,
+        includeInstallation: true,
+        includeAnnualService: true,
+        pointGeometryId: 'vlZ-0whpe53Hg6g1nZfhk'
+      };
+      if (exConfigs.length > 0) { cfgData.id = exConfigs[0].id; }
+      this.models.MoleProtConfig.save(cfgData);
+
+# =============================================================================
+# Computations -- geometry helpers volane z derivaci
+# =============================================================================
+computations:
+
+  geometryArea:
+    params: [geo]
+    body: |
+      if (!geo) return 0;
+      if (geo.type === 'rect') return geo.width * geo.height;
+      if (geo.type === 'circle') return Math.PI * geo.radius * geo.radius;
+      if (geo.type === 'polygon' && geo.points && geo.points.length >= 3) {
+        var a = 0;
+        for (var i = 0; i < geo.points.length; i++) {
+          var j = (i + 1) % geo.points.length;
+          a += geo.points[i].x * geo.points[j].y - geo.points[j].x * geo.points[i].y;
+        }
+        return Math.abs(a) / 2;
+      }
+      return 0;
+
+  geometryLength:
+    params: [geo]
+    body: |
+      if (!geo) return 0;
+      var pts = geo.points || geo.controlPoints || [];
+      if (pts.length < 2) return 0;
+      var total = 0;
+      var closed = geo.type === 'polygon';
+      var n = closed ? pts.length : pts.length - 1;
+      for (var i = 0; i < n; i++) {
+        var a = pts[i];
+        var b = pts[(i + 1) % pts.length];
+        var dx = b.x - a.x, dy = b.y - a.y;
+        total += Math.sqrt(dx * dx + dy * dy);
+      }
+      return total;
+
+# =============================================================================
+# Tools -- kresli nastroje pro vykres
+# =============================================================================
+tools:
+
+  config-marker:
+    model: MoleProtConfig
+    icon: o_calculate
+    label: Konfigurace ochrany
+    namePrefix: Konfig
+    dialogFields: [name, clientName, pointGeometryId]
+    template: |
+      {% if g %}
+      {% set bw = pointsToMm(88) %}
+      {% set bh = pointsToMm(22) %}
+      <g class="krtekstop-config-marker{{ ' temporary' if isTemporary else '' }}"
+         {{ 'opacity="0.5"' if isTemporary else '' }}>
+        <rect x="{{ g.x - bw / 2 }}" y="{{ g.y - bh / 2 }}"
+              width="{{ bw }}" height="{{ bh }}" rx="{{ pointsToMm(4) }}"
+              fill="#0c2340" stroke="#0ea5e9" stroke-width="1.5"
+              opacity="0.93" vector-effect="non-scaling-stroke"/>
+        <rect x="{{ g.x - bw / 2 }}" y="{{ g.y - bh / 2 }}"
+              width="{{ pointsToMm(5) }}" height="{{ bh }}" rx="{{ pointsToMm(4) }}"
+              fill="#0ea5e9" vector-effect="non-scaling-stroke"/>
+        <text x="{{ g.x - bw / 2 + pointsToMm(10) }}" y="{{ g.y - pointsToMm(2) }}"
+              dominant-baseline="central"
+              font-family="-apple-system, BlinkMacSystemFont, sans-serif"
+              font-size="{{ pointsToMm(7.5) }}" fill="#38bdf8" font-weight="700"
+              style="user-select:none">{{ m.name }}</text>
+        <text x="{{ g.x - bw / 2 + pointsToMm(10) }}" y="{{ g.y + pointsToMm(6) }}"
+              dominant-baseline="central"
+              font-family="-apple-system, BlinkMacSystemFont, sans-serif"
+              font-size="{{ pointsToMm(5.5) }}" fill="#94a3b8"
+              style="user-select:none">{{ m.clientName }}</text>
+      </g>
+      {% endif %}
+
+  garden-zone:
+    model: GardenZone
+    icon: o_grass
+    label: Zahradni zona
+    namePrefix: Zona
+    dialogFields: [name, zoneType, regionGeometryIds]
+    template: |
+      {% if geos | length > 0 %}
+      <g class="krtekstop-garden-zone{{ ' temporary' if isTemporary else '' }}"
+         {{ 'opacity="0.5"' if isTemporary else '' }}>
+        {% for gg in geos %}
+        {% if gg.type == 'rect' %}
+        <rect x="{{ gg.x }}" y="{{ gg.y }}" width="{{ gg.width }}" height="{{ gg.height }}"
+              fill="rgba(22, 163, 74, 0.13)" stroke="#16a34a" stroke-width="2"
+              stroke-dasharray="8 4" vector-effect="non-scaling-stroke"/>
+        {% elif gg.type == 'polygon' and gg.svgPoints %}
+        <polygon points="{{ gg.svgPoints }}"
+                 fill="rgba(22, 163, 74, 0.13)" stroke="#16a34a" stroke-width="2"
+                 stroke-dasharray="8 4" vector-effect="non-scaling-stroke"/>
+        {% endif %}
+        {% endfor %}
+        {% if envelope %}
+        <text x="{{ envelope.x + envelope.width / 2 }}"
+              y="{{ envelope.y + envelope.height / 2 }}"
+              text-anchor="middle" dominant-baseline="central"
+              font-family="-apple-system, BlinkMacSystemFont, sans-serif"
+              font-size="{{ pointsToMm(10) }}" fill="#166534" font-weight="600"
+              style="user-select:none">{{ m.name }}</text>
+        {% endif %}
+      </g>
+      {% endif %}
+
+  mole-mound:
+    model: MoleMound
+    icon: o_terrain
+    label: Krtinec
+    namePrefix: Krtinec
+    dialogFields: [name, severity, pointGeometryId]
+    template: |
+      {% if g %}
+      <g class="krtekstop-mole-mound{{ ' temporary' if isTemporary else '' }}"
+         {{ 'opacity="0.5"' if isTemporary else '' }}>
+        {% set kFill = '#d97706' if m.severity == 'fresh' else ('#6b7280' if m.severity == 'old' else ('#a855f7' if m.severity == 'quantum' else ('#ef4444' if m.severity == 'warp-speed' else '#94a3b8'))) %}
+        {% set kStroke = '#92400e' if m.severity == 'fresh' else ('#374151' if m.severity == 'old' else ('#7e22ce' if m.severity == 'quantum' else ('#b91c1c' if m.severity == 'warp-speed' else '#64748b'))) %}
+        {% set kIcon = 'Q' if m.severity == 'quantum' else ('W' if m.severity == 'warp-speed' else 'K') %}
+        <circle cx="{{ g.x }}" cy="{{ g.y }}" r="{{ pointsToMm(7) }}"
+                fill="{{ kFill }}" stroke="{{ kStroke }}"
+                stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+        {% if m.severity == 'quantum' %}
+        <circle cx="{{ g.x }}" cy="{{ g.y }}" r="{{ pointsToMm(11) }}"
+                fill="none" stroke="#a855f7" stroke-width="0.8"
+                stroke-dasharray="2 3" opacity="0.7"
+                vector-effect="non-scaling-stroke"/>
+        {% elif m.severity == 'warp-speed' %}
+        <circle cx="{{ g.x }}" cy="{{ g.y }}" r="{{ pointsToMm(12) }}"
+                fill="none" stroke="#ef4444" stroke-width="0.8"
+                stroke-dasharray="1 2" opacity="0.6"
+                vector-effect="non-scaling-stroke"/>
+        <circle cx="{{ g.x }}" cy="{{ g.y }}" r="{{ pointsToMm(16) }}"
+                fill="none" stroke="#ef4444" stroke-width="0.5"
+                stroke-dasharray="1 3" opacity="0.3"
+                vector-effect="non-scaling-stroke"/>
+        {% endif %}
+        <text x="{{ g.x }}" y="{{ g.y }}"
+              text-anchor="middle" dominant-baseline="central"
+              font-family="-apple-system, BlinkMacSystemFont, sans-serif"
+              font-size="{{ pointsToMm(5) }}" fill="white" font-weight="700"
+              style="user-select:none">{{ kIcon }}</text>
+      </g>
+      {% endif %}
+
+  repeller:
+    model: RepellerDevice
+    icon: o_cell_tower
+    label: Plasic / obranný systém
+    namePrefix: Obrana
+    dialogFields: [name, deviceType, pointGeometryId]
+    template: |
+      {% if g %}
+      {% set fillCol = '#ea580c' if m.deviceType == 'solar-sonic' else ('#f59e0b' if m.deviceType == 'battery-sonic' else ('#16a34a' if m.deviceType == 'vibration-stake' else ('#06b6d4' if m.deviceType == 'force-field-emitter' else ('#dc2626' if m.deviceType == 'turbolaser' else '#8b5cf6')))) %}
+      {% set strokeCol = '#9a3412' if m.deviceType == 'solar-sonic' else ('#b45309' if m.deviceType == 'battery-sonic' else ('#166534' if m.deviceType == 'vibration-stake' else ('#0891b2' if m.deviceType == 'force-field-emitter' else ('#991b1b' if m.deviceType == 'turbolaser' else '#6d28d9')))) %}
+      {% set icon = 'SF' if m.deviceType == 'force-field-emitter' else ('TL' if m.deviceType == 'turbolaser' else ('IK' if m.deviceType == 'ion-pulse' else 'P')) %}
+      {% set ringR = 22 if m.deviceType == 'turbolaser' else (18 if m.deviceType == 'force-field-emitter' or m.deviceType == 'ion-pulse' else 14) %}
+      <g class="krtekstop-repeller{{ ' temporary' if isTemporary else '' }}"
+         {{ 'opacity="0.5"' if isTemporary else '' }}>
+        <circle cx="{{ g.x }}" cy="{{ g.y }}" r="{{ pointsToMm(7) }}"
+                fill="{{ fillCol }}" stroke="{{ strokeCol }}" stroke-width="1.5"
+                vector-effect="non-scaling-stroke"/>
+        <text x="{{ g.x }}" y="{{ g.y }}"
+              text-anchor="middle" dominant-baseline="central"
+              font-family="-apple-system, BlinkMacSystemFont, sans-serif"
+              font-size="{{ pointsToMm(5) }}" fill="white" font-weight="700"
+              style="user-select:none">{{ icon }}</text>
+        <circle cx="{{ g.x }}" cy="{{ g.y }}" r="{{ pointsToMm(ringR) }}"
+                fill="none" stroke="{{ fillCol }}" stroke-width="1"
+                stroke-dasharray="{{ '6 2' if m.deviceType in ['force-field-emitter','turbolaser'] else '3 3' }}"
+                opacity="{{ '0.8' if m.deviceType in ['force-field-emitter','turbolaser'] else '0.5' }}"
+                vector-effect="non-scaling-stroke"/>
+        {% if m.deviceType == 'turbolaser' %}
+        <circle cx="{{ g.x }}" cy="{{ g.y }}" r="{{ pointsToMm(28) }}"
+                fill="none" stroke="#dc2626" stroke-width="0.5"
+                stroke-dasharray="2 4" opacity="0.4"
+                vector-effect="non-scaling-stroke"/>
+        {% endif %}
+      </g>
+      {% endif %}
+
+  flood-point:
+    model: FloodPoint
+    icon: o_water
+    label: Zaplavovac / likvidator
+    namePrefix: Likvidace
+    dialogFields: [name, floodType, pointGeometryId]
+    template: |
+      {% if g %}
+      {% set fillCol = '#0284c7' if m.floodType == 'auto' else ('#0ea5e9' if m.floodType == 'manual' else ('#9333ea' if m.floodType == 'plasma-torpedo' else '#059669')) %}
+      {% set strokeCol = '#075985' if m.floodType == 'auto' or m.floodType == 'manual' else ('#7e22ce' if m.floodType == 'plasma-torpedo' else '#065f46') %}
+      {% set icon = 'PT' if m.floodType == 'plasma-torpedo' else ('TB' if m.floodType == 'tractor-beam' else 'Z') %}
+      <g class="krtekstop-flood-point{{ ' temporary' if isTemporary else '' }}"
+         {{ 'opacity="0.5"' if isTemporary else '' }}>
+        <circle cx="{{ g.x }}" cy="{{ g.y }}" r="{{ pointsToMm(7) }}"
+                fill="{{ fillCol }}" stroke="{{ strokeCol }}" stroke-width="1.5"
+                vector-effect="non-scaling-stroke"/>
+        <text x="{{ g.x }}" y="{{ g.y }}"
+              text-anchor="middle" dominant-baseline="central"
+              font-family="-apple-system, BlinkMacSystemFont, sans-serif"
+              font-size="{{ pointsToMm(5) }}" fill="white" font-weight="700"
+              style="user-select:none">{{ icon }}</text>
+        {% if m.floodType in ['plasma-torpedo','tractor-beam'] %}
+        <circle cx="{{ g.x }}" cy="{{ g.y }}" r="{{ pointsToMm(11) }}"
+                fill="none" stroke="{{ fillCol }}" stroke-width="1"
+                stroke-dasharray="4 2" opacity="0.6"
+                vector-effect="non-scaling-stroke"/>
+        {% endif %}
+      </g>
+      {% endif %}
+
+  barrier-net:
+    model: BarrierSection
+    icon: o_fence
+    label: Barierova sit
+    namePrefix: Bariera
+    dialogFields: [name, barrierType, installDepth, lineGeometryIds]
+    template: |
+      {% if geos | length > 0 %}
+      {% set bColor = '#06b6d4' if m.barrierType == 'force-barrier' else ('#7c3aed' if m.barrierType == 'transphasic-mesh' else ('#78716c' if m.barrierType == 'duranium-net' else ('#854d0e' if m.barrierType == 'galvanized-net' else '#4338ca'))) %}
+      {% set bWidth = '5' if m.barrierType == 'force-barrier' or m.barrierType == 'transphasic-mesh' else '4' %}
+      {% set bDash = '2 2' if m.barrierType == 'force-barrier' else ('8 2' if m.barrierType == 'transphasic-mesh' else '6 3') %}
+      {% set bFill = 'rgba(6,182,212,0.06)' if m.barrierType == 'force-barrier' else 'none' %}
+      <g class="krtekstop-barrier{{ ' temporary' if isTemporary else '' }}"
+         {{ 'opacity="0.5"' if isTemporary else '' }}>
+        {% for gg in geos %}
+        {% if gg.type == 'polyline' and gg.svgPoints %}
+        <polyline points="{{ gg.svgPoints }}"
+                  fill="none" stroke="{{ bColor }}"
+                  stroke-width="{{ bWidth }}" stroke-dasharray="{{ bDash }}"
+                  vector-effect="non-scaling-stroke"/>
+        {% elif gg.type == 'line' and gg.svgPoints %}
+        <polyline points="{{ gg.svgPoints }}"
+                  fill="none" stroke="{{ bColor }}"
+                  stroke-width="{{ bWidth }}" stroke-dasharray="{{ bDash }}"
+                  vector-effect="non-scaling-stroke"/>
+        {% elif gg.type == 'polygon' and gg.svgPoints %}
+        <polygon points="{{ gg.svgPoints }}"
+                 fill="{{ bFill }}" stroke="{{ bColor }}"
+                 stroke-width="{{ bWidth }}" stroke-dasharray="{{ bDash }}"
+                 vector-effect="non-scaling-stroke"/>
+        {% elif gg.type == 'rect' %}
+        <rect x="{{ gg.x }}" y="{{ gg.y }}" width="{{ gg.width }}" height="{{ gg.height }}"
+              fill="{{ bFill }}" stroke="{{ bColor }}"
+              stroke-width="{{ bWidth }}" stroke-dasharray="{{ bDash }}"
+              vector-effect="non-scaling-stroke"/>
+        {% endif %}
+        {% endfor %}
+        {% if envelope %}
+        <text x="{{ envelope.x + envelope.width / 2 }}"
+              y="{{ envelope.y - pointsToMm(4) }}"
+              text-anchor="middle"
+              font-family="-apple-system, BlinkMacSystemFont, sans-serif"
+              font-size="{{ pointsToMm(8) }}" fill="#312e81" font-weight="600"
+              style="user-select:none">{{ m.name }}</text>
+        {% endif %}
+      </g>
+      {% endif %}
+
+# =============================================================================
+# Calculators
+# =============================================================================
+calculators:
+
+  moleprotection:
+    label: "Ochrana pred krtky"
+    icon: o_pest_control
+    inputModel: MoleProtConfig
+    instanceNoun: Varianta
+    description: Konfigurator ochrany zahrady pred krtky -- plasice, bariery, zaplaveni krtincu.
+    allowDuplicate: true
+    form:
+      steps:
+        - id: klient
+          label: "Zakaznik"
+          fields: [name, clientName, propertyAddress]
+        - id: plocha
+          label: "Zahrada"
+          description: "Zakreslete zahradni zony nastrojem 'Zahradni zona' a krtince nastrojem 'Krtinec'."
+          fields: [gardenArea, infestationLevel, moleMoundCount]
+        - id: metody
+          label: "Metody ochrany"
+          description: "Zvolte metody ochrany. Plasice, bariery a body zaplaveni zakreslete na vykres."
+          fields: [useRepellers, repellerModel, repellerCount,
+                   useBarrier, barrierType, barrierLength,
+                   useFlooding, floodingType, floodPointCount]
+        - id: sluzby
+          label: "Sluzby"
+          fields: [includeInstallation, includeAnnualService]
+      rules:
+        - { field: repellerModel,   showWhen: { useRepellers: true } }
+        - { field: repellerCount,   showWhen: { useRepellers: true } }
+        - { field: barrierType,     showWhen: { useBarrier: true } }
+        - { field: barrierLength,   showWhen: { useBarrier: true } }
+        - { field: floodingType,    showWhen: { useFlooding: true } }
+        - { field: floodPointCount, showWhen: { useFlooding: true } }
+    outputs: [protection-bom, protection-summary]
+
+# =============================================================================
+# Aggregations
+# =============================================================================
+aggregations:
+
+  protectionBOM:
+    params: [models, instance, compute]
+    body: |
+      var c = instance;
+      if (!c) return { columns: [], rows: [], footer: [], metrics: {} };
+
+      var REPELLER_PRICES = {
+        'solar-sonic': 350, 'battery-sonic': 220, 'vibration-stake': 180,
+        'force-field-emitter': 4900, 'turbolaser': 12500, 'ion-pulse': 7800
+      };
+      var REPELLER_NAMES  = {
+        'solar-sonic':         'SolarMole 300 -- solarni sonicky plasic',
+        'battery-sonic':       'VibratMole Duo -- bateriovy sonicky plasic',
+        'vibration-stake':     'EcoVib -- vibracni kolik',
+        'force-field-emitter': 'NovaStar SFE-1 -- generator siloveho pole',
+        'turbolaser':          'TurboLazer Krtex-IX -- turbolaserova baterie',
+        'ion-pulse':           'Ionovy Pulzator IM-6 -- ionovy kanon'
+      };
+      var BARRIER_PRICES = {
+        'pe-net': 45, 'galvanized-net': 89,
+        'force-barrier': 890, 'transphasic-mesh': 250, 'duranium-net': 180
+      };
+      var BARRIER_NAMES  = {
+        'pe-net':           'PE barierova sit 100 cm',
+        'galvanized-net':   'Pozinkovana barierova sit 50 cm',
+        'force-barrier':    'NovaStar FBG-3 -- fazova barierova baterie',
+        'transphasic-mesh': 'TransMesh ST-IV -- transphasicka sit',
+        'duranium-net':     'DuraNorm -- duraniumova sit'
+      };
+      var FLOOD_PRICES  = {
+        'auto': 2890, 'manual': 890,
+        'plasma-torpedo': 8500, 'tractor-beam': 15900
+      };
+      var FLOOD_NAMES   = {
+        'auto':           'HydroMole Auto -- automaticky zaplavovac krtincu',
+        'manual':         'FloodKit -- rucni zaplavovaci sada',
+        'plasma-torpedo': 'AquaPlasma T-5 -- plazmovy torpedomed krtincu',
+        'tractor-beam':   'TraktorKrtek 3000 -- traktorovy svazek'
+      };
+
+      var subtotal = 0;
+      var rows = [];
+      function line(category, item, qty, unit, unitPrice) {
+        if (qty <= 0) return;
+        var price = qty * unitPrice;
+        subtotal += price;
+        rows.push({ category: category, item: item, qty: qty, unit: unit, price: price });
+      }
+
+      var repellerQty = c.useRepellers ? (c.repellerCount || 0) : 0;
+      var barrierLen  = c.useBarrier   ? (c.barrierLength  || 0) : 0;
+      var floodQty    = c.useFlooding  ? (c.floodPointCount || 0) : 0;
+
+      line('Plasice', REPELLER_NAMES[c.repellerModel] || 'Plasic', repellerQty, 'ks',
+           REPELLER_PRICES[c.repellerModel] || 350);
+      line('Barierova sit', BARRIER_NAMES[c.barrierType] || 'Sit', barrierLen, 'bm',
+           BARRIER_PRICES[c.barrierType] || 45);
+      if (c.useBarrier && barrierLen > 0 && c.includeInstallation) {
+        line('Barierova sit', 'Instalace barierove site', barrierLen, 'bm', 180);
+      }
+      line('Zaplaveni', FLOOD_NAMES[c.floodingType] || 'Zaplavovac', floodQty, 'ks',
+           FLOOD_PRICES[c.floodingType] || 2890);
+      if (c.includeInstallation) {
+        line('Sluzby', 'Profesionalni instalace a uvedeni do provozu', 1, 'navsteva', 1200);
+      }
+      if (c.includeAnnualService) {
+        line('Sluzby', 'Rocni servisni smlouva', 1, 'rok', 3600);
+      }
+
+      var vat   = Math.round(subtotal * 0.21);
+      var total = subtotal + vat;
+
+      return {
+        columns: [
+          { key: 'item',  label: 'Polozka' },
+          { key: 'qty',   label: 'Pocet',       align: 'right', format: 'number' },
+          { key: 'unit',  label: 'J.m.' },
+          { key: 'price', label: 'Cena bez DPH', align: 'right', format: 'currency' }
+        ],
+        rows: rows,
+        footer: [
+          { label: 'Mezisoucet bez DPH', value: subtotal, format: 'currency' },
+          { label: 'DPH 21 %',           value: vat,      format: 'currency' },
+          { label: 'Celkem s DPH',        value: total,    format: 'currency' }
+        ],
+        metrics: {
+          totalPrice:  { value: total,                  label: 'Celkova cena s DPH', unit: 'Kc', format: 'currency' },
+          gardenArea:  { value: c.gardenArea || 0,      label: 'Plocha zahrady',     unit: 'm2' },
+          moundCount:  { value: c.moleMoundCount || 0,  label: 'Krtincu',            unit: 'ks' }
+        }
+      };
+
+  protectionSummary:
+    params: [models, instance, compute]
+    body: |
+      var pid = instance ? instance.project_id : null;
+      var zones     = (models.GardenZone     || []).filter(function(r){ return r.project_id === pid; });
+      var mounds    = (models.MoleMound      || []).filter(function(r){ return r.project_id === pid; });
+      var repellers = (models.RepellerDevice || []).filter(function(r){ return r.project_id === pid; });
+      var floods    = (models.FloodPoint     || []).filter(function(r){ return r.project_id === pid; });
+      var barriers  = (models.BarrierSection || []).filter(function(r){ return r.project_id === pid; });
+
+      var totalArea = 0;
+      for (var i = 0; i < zones.length; i++) totalArea += (zones[i].area || 0);
+      var totalBarrier = 0;
+      for (var i = 0; i < barriers.length; i++) totalBarrier += (barriers[i].length || 0);
+      var freshMounds = mounds.filter(function(m){ return m.severity === 'fresh'; }).length;
+      var oldMounds   = mounds.filter(function(m){ return m.severity === 'old';   }).length;
+
+      var rows = [
+        { category: 'Plocha',   item: 'Zahradni zony',            qty: zones.length,     unit: 'ks',  value: totalArea.toFixed(1) + ' m2' },
+        { category: 'Krtinci', item: 'Aktivni krtince (cerstve)', qty: freshMounds,      unit: 'ks',  value: '' },
+        { category: 'Krtinci', item: 'Neaktivni krtince (stare)', qty: oldMounds,        unit: 'ks',  value: '' },
+        { category: 'Ochrana', item: 'Plasice krtku',             qty: repellers.length, unit: 'ks',  value: '' },
+        { category: 'Ochrana', item: 'Body zaplaveni',            qty: floods.length,    unit: 'ks',  value: '' },
+        { category: 'Ochrana', item: 'Barierove useky',           qty: barriers.length,  unit: 'ks',  value: totalBarrier.toFixed(1) + ' m' }
+      ];
+
+      return {
+        columns: [
+          { key: 'item',  label: 'Prvek' },
+          { key: 'qty',   label: 'Pocet', align: 'right', format: 'number' },
+          { key: 'unit',  label: 'J.m.' },
+          { key: 'value', label: 'Hodnota' }
+        ],
+        rows: rows,
+        footer: [],
+        metrics: {
+          totalArea:     { value: totalArea,                       label: 'Celkova plocha',      unit: 'm2' },
+          totalMounds:   { value: mounds.length,                   label: 'Celkem krtincu',      unit: 'ks' },
+          totalDevices:  { value: repellers.length + floods.length, label: 'Ochrannych zarizeni', unit: 'ks' },
+          totalBarrierM: { value: totalBarrier,                    label: 'Delka barier',         unit: 'm'  }
+        }
+      };
+
+# =============================================================================
+# Views
+# =============================================================================
+views:
+
+  - id: protection-bom
+    label: Polozky a ceny
+    icon: o_receipt_long
+    aggregation: protectionBOM
+    layout:
+      - { type: metrics, source: protectionBOM.metrics }
+      - { type: table,   source: protectionBOM, groupBy: category }
+
+  - id: protection-summary
+    label: Prehled ochrany
+    icon: o_dashboard
+    aggregation: protectionSummary
+    layout:
+      - { type: metrics, source: protectionSummary.metrics }
+      - { type: table,   source: protectionSummary, groupBy: category }
+
+# =============================================================================
+# Panels -- Firemni nabidka HYDROTEK s.r.o.
+# Vsechna CSS musi byt inline (zadne externi URL -- render_preview to odmitne).
+# Firemni identita: HYDROTEK s.r.o. / ZaplavKrtka.cz
+# Barvy: modra (#0284c7 primary, #0ea5e9 accent), tmave (#0c2340)
+# =============================================================================
+panels:
+
+  - id: hydrotek-quote
+    label: Nabidka HYDROTEK
+    icon: o_water_drop
+    description: "Firemni nabidka GALAKTOTEK s.r.o. | GalaktoKrtek.cz"
+    template: |
+      <style>
+        .ht { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+              color: #0c2340; line-height: 1.5; max-width: 720px;
+              background: #fff; padding: 24px 28px; box-sizing: border-box;
+              border: 1px solid #bae6fd; border-radius: 6px; }
+        .ht-header { display: flex; align-items: flex-start; gap: 16px;
+                     border-bottom: 3px solid #0284c7; padding-bottom: 16px;
+                     margin-bottom: 20px; }
+        .ht-logo { min-width: 60px; width: 60px; height: 60px; border-radius: 50%;
+                   background: transparent;
+                   box-shadow: 0 3px 10px rgba(2,132,199,0.4); overflow: hidden; }
+        .ht-brand { flex: 1; }
+        .ht-brand h1 { margin: 0 0 3px; font-size: 20px; color: #0369a1; font-weight: 800; }
+        .ht-brand .tagline { margin: 0 0 2px; color: #64748b; font-size: 12px; }
+        .ht-brand .address { margin: 0; color: #94a3b8; font-size: 11px; }
+        .ht-brand .web { color: #0ea5e9; font-weight: 700; }
+        .ht-meta { font-size: 12px; color: #64748b; text-align: right; line-height: 1.7; }
+        .ht-meta strong { display: block; font-size: 14px; color: #0c2340; font-weight: 700; }
+        .ht-client { background: #f0f9ff; border-left: 4px solid #0ea5e9;
+                     padding: 12px 16px; border-radius: 0 4px 4px 0;
+                     margin-bottom: 18px; }
+        .ht-client strong { display: block; font-size: 14px; color: #0c2340; margin-bottom: 1px; }
+        .ht-client span { font-size: 12px; color: #64748b; }
+        .ht-kpis { display: grid; grid-template-columns: repeat(3, 1fr);
+                   gap: 10px; margin: 0 0 18px; }
+        .ht-kpi { background: #f0f9ff; padding: 12px 10px; border-radius: 6px;
+                  text-align: center; border: 1px solid #bae6fd; }
+        .ht-kpi span { display: block; font-size: 10px; color: #0369a1;
+                       text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 3px; }
+        .ht-kpi strong { font-size: 20px; color: #0c2340; font-weight: 700; }
+        .ht-section { font-size: 11px; font-weight: 700; text-transform: uppercase;
+                      letter-spacing: 0.8px; color: #0369a1; margin: 16px 0 6px;
+                      border-bottom: 1px solid #bae6fd; padding-bottom: 4px; }
+        .ht-table { width: 100%; border-collapse: collapse; margin: 0 0 4px; font-size: 13px; }
+        .ht-table th { text-align: left; background: #0369a1; color: #fff;
+                       padding: 6px 10px; font-size: 10px; text-transform: uppercase;
+                       letter-spacing: 0.5px; }
+        .ht-table td { padding: 6px 10px; border-bottom: 1px solid #e0f2fe; }
+        .ht-table tr:nth-child(even) td { background: #f8fbff; }
+        .ht-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+        .ht-totals { background: linear-gradient(135deg, #0369a1, #0c2340);
+                     color: #fff; padding: 16px 20px; border-radius: 6px; margin-top: 16px; }
+        .ht-trow { display: flex; justify-content: space-between;
+                   padding: 3px 0; font-size: 13px; opacity: 0.85; }
+        .ht-trow.grand { opacity: 1; font-size: 17px; font-weight: 800;
+                         border-top: 1px solid rgba(255,255,255,0.3);
+                         margin-top: 8px; padding-top: 10px; }
+        .ht-sign { display: flex; justify-content: space-between;
+                   margin-top: 28px; gap: 24px; }
+        .ht-sign div { flex: 1; border-top: 1px solid #bae6fd; padding-top: 8px;
+                       font-size: 11px; color: #64748b; text-align: center; }
+        .ht-footer { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e0f2fe;
+                     font-size: 10px; color: #94a3b8; line-height: 1.6; }
+        .ht-empty { padding: 40px 20px; text-align: center; color: #64748b;
+                    font-size: 14px; background: #f8fafc; border-radius: 6px;
+                    border: 1px dashed #bae6fd; }
+        .dot-o { color: #ea580c; }
+        .dot-b { color: #0284c7; }
+        .dot-g { color: #16a34a; }
+      </style>
+      <div class="ht">
+        <div class="ht-header">
+          <div class="ht-logo"><svg viewBox="0 0 60 60" width="60" height="60" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="30" cy="30" r="30" fill="#0c2340"/>
+            <circle cx="30" cy="30" r="29" fill="none" stroke="#0ea5e9" stroke-width="1.5"/>
+            <ellipse cx="11" cy="24" rx="6" ry="9" fill="#78350f"/>
+            <ellipse cx="49" cy="24" rx="6" ry="9" fill="#78350f"/>
+            <circle cx="30" cy="36" r="19" fill="#92400e"/>
+            <path d="M13 26 Q13 7 30 7 Q47 7 47 26 Z" fill="#ea580c"/>
+            <rect x="13" y="23" width="34" height="5" rx="1" fill="#c2440c"/>
+            <rect x="14" y="26" width="32" height="12" rx="4" fill="#0f172a"/>
+            <ellipse cx="22" cy="30" rx="8" ry="3.5" fill="#1d4ed8" opacity="0.22"/>
+            <circle cx="21" cy="31.5" r="3.2" fill="#dc2626" opacity="0.82"/>
+            <circle cx="39" cy="31.5" r="3.2" fill="#dc2626" opacity="0.82"/>
+            <circle cx="21" cy="31.5" r="1.5" fill="#fca5a5" opacity="0.65"/>
+            <circle cx="39" cy="31.5" r="1.5" fill="#fca5a5" opacity="0.65"/>
+            <ellipse cx="30" cy="46.5" rx="7" ry="5.5" fill="#a16207"/>
+            <ellipse cx="30" cy="44.5" rx="3.2" ry="2.8" fill="#dc2626"/>
+            <line x1="13" y1="44" x2="23" y2="46" stroke="#fde68a" stroke-width="0.9" stroke-linecap="round"/>
+            <line x1="13" y1="47.5" x2="23" y2="47.5" stroke="#fde68a" stroke-width="0.9" stroke-linecap="round"/>
+            <line x1="47" y1="44" x2="37" y2="46" stroke="#fde68a" stroke-width="0.9" stroke-linecap="round"/>
+            <line x1="47" y1="47.5" x2="37" y2="47.5" stroke="#fde68a" stroke-width="0.9" stroke-linecap="round"/>
+            <path d="M30 9 L31.8 12.5 L35.5 11.5 L33 15 L36.5 17.5 L32 16.5 L30 20.5 L28 16.5 L23.5 17.5 L27 15 L24.5 11.5 L28.2 12.5 Z" fill="white" opacity="0.9"/>
+            <rect x="46" y="38" width="12" height="4" rx="1.5" fill="#475569"/>
+            <rect x="55" y="35.5" width="3.5" height="3" rx="0.5" fill="#334155"/>
+            <rect x="47" y="41.5" width="5" height="2.5" rx="1" fill="#64748b"/>
+          </svg></div>
+          <div class="ht-brand">
+            <h1>GALAKTOTEK s.r.o.</h1>
+            <p class="tagline">Ochrana pred krtky zemskymi i galaktickymi &mdash; <span class="web">GalaktoKrtek.cz</span></p>
+            <p class="address">Hvezdna 42, 370 01 Ceske Budejovice &bull; IC: 09987654 &bull; DIC: CZ09987654</p>
+          </div>
+          <div class="ht-meta">
+            <strong>{{ quoteNumber }}</strong>
+            Datum: {{ date }}<br/>
+            Platnost do: {{ validUntil }}<br/>
+            Tel.: +420 777 GS-4200
+          </div>
+        </div>
+
+        {% if noConfig %}
+        <div class="ht-empty">
+          Otevrte kalkulator &laquo;Ochrana pred krtky&raquo;, vyplnte variantu a zakreslete prvky na vykres.
+        </div>
+        {% else %}
+
+        <div class="ht-client">
+          <strong>{{ clientName }}</strong>
+          <span>{{ propertyAddress }}</span>
+        </div>
+
+        <div class="ht-kpis">
+          <div class="ht-kpi">
+            <span class="dot-g">Plocha zahrady</span>
+            <strong>{{ gardenAreaStr }} m&sup2;</strong>
+          </div>
+          <div class="ht-kpi">
+            <span>Krtincu</span>
+            <strong>{{ moundCount }}</strong>
+          </div>
+          <div class="ht-kpi">
+            <span class="dot-b">Zarizeni celkem</span>
+            <strong>{{ deviceCount }}</strong>
+          </div>
+        </div>
+
+        {% if repellerLines | length > 0 %}
+        <div class="ht-section">Plasice krtku <span class="dot-o">&bull;</span></div>
+        <table class="ht-table">
+          <thead><tr><th>Polozka</th><th class="r">Ks</th><th class="r">Kc/ks</th><th class="r">Celkem Kc</th></tr></thead>
+          <tbody>
+            {% for r in repellerLines %}
+            <tr><td>{{ r.item }}</td><td class="r">{{ r.qty }}</td><td class="r">{{ r.unitPrice }}</td><td class="r">{{ r.price }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+
+        {% if floodLines | length > 0 %}
+        <div class="ht-section">Automaticke zaplaveni krtincu <span class="dot-b">&bull;</span></div>
+        <table class="ht-table">
+          <thead><tr><th>Polozka</th><th class="r">Ks</th><th class="r">Kc/ks</th><th class="r">Celkem Kc</th></tr></thead>
+          <tbody>
+            {% for r in floodLines %}
+            <tr><td>{{ r.item }}</td><td class="r">{{ r.qty }}</td><td class="r">{{ r.unitPrice }}</td><td class="r">{{ r.price }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+
+        {% if barrierLines | length > 0 %}
+        <div class="ht-section">Barierova sit</div>
+        <table class="ht-table">
+          <thead><tr><th>Polozka</th><th class="r">Mn.</th><th class="r">Kc/j</th><th class="r">Celkem Kc</th></tr></thead>
+          <tbody>
+            {% for r in barrierLines %}
+            <tr><td>{{ r.item }}</td><td class="r">{{ r.qty }} {{ r.unit }}</td><td class="r">{{ r.unitPrice }}</td><td class="r">{{ r.price }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+
+        {% if serviceLines | length > 0 %}
+        <div class="ht-section">Sluzby a instalace</div>
+        <table class="ht-table">
+          <thead><tr><th>Sluzba</th><th class="r">Mn.</th><th class="r">Kc/j</th><th class="r">Celkem Kc</th></tr></thead>
+          <tbody>
+            {% for r in serviceLines %}
+            <tr><td>{{ r.item }}</td><td class="r">{{ r.qty }}</td><td class="r">{{ r.unitPrice }}</td><td class="r">{{ r.price }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+
+        <div class="ht-totals">
+          <div class="ht-trow"><span>Mezisoucet bez DPH</span><span>{{ subtotalStr }} Kc</span></div>
+          <div class="ht-trow"><span>DPH 21 %</span><span>{{ vatStr }} Kc</span></div>
+          <div class="ht-trow grand"><span>CELKEM S DPH</span><span>{{ totalStr }} Kc</span></div>
+        </div>
+
+        <div class="ht-sign">
+          <div>Za GALAKTOTEK s.r.o.<br/>&nbsp;<br/>Kpt. Tomas Vesmirny, jednatel</div>
+          <div>Objednatel<br/>&nbsp;<br/>{{ clientName }}</div>
+        </div>
+
+        {% endif %}
+
+        <div class="ht-footer">
+          GALAKTOTEK s.r.o. &bull; Hvezdna 42, 370 01 Ceske Budejovice &bull; IC: 09987654<br/>
+          Zapsana v OR u Krajskeho soudu v CB, oddil C, vlozka 45987 &bull; www.GalaktoKrtek.cz<br/>
+          <em>Autorizovany distributor NovaStar Defense Systems &bull; Certifikat ISO-9001 &amp; Galakticky standard GS-42 &bull; Neposkytujeme zaruku pro krtky s kvantovymi schopnostmi.</em>
+        </div>
+      </div>
+    body: |
+      var pid = projectId;
+      var configs   = (models.MoleProtConfig  || []).filter(function(r){ return r.project_id === pid; });
+      var zones     = (models.GardenZone      || []).filter(function(r){ return r.project_id === pid; });
+      var mounds    = (models.MoleMound       || []).filter(function(r){ return r.project_id === pid; });
+      var repellers = (models.RepellerDevice  || []).filter(function(r){ return r.project_id === pid; });
+      var floods    = (models.FloodPoint      || []).filter(function(r){ return r.project_id === pid; });
+      var barriers  = (models.BarrierSection  || []).filter(function(r){ return r.project_id === pid; });
+
+      var c = configs[0] || null;
+
+      var now = new Date();
+      function pad(n) { return n < 10 ? '0' + n : '' + n; }
+      var date = pad(now.getDate()) + '. ' + pad(now.getMonth() + 1) + '. ' + now.getFullYear();
+      var validD = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      var validUntil = pad(validD.getDate()) + '. ' + pad(validD.getMonth() + 1) + '. ' + validD.getFullYear();
+      var quoteNum = 'HYDRO-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate())
+                    + '-' + ('00' + (now.getHours() * 60 + now.getMinutes())).slice(-3);
+
+      if (!c) {
+        return { noConfig: true, quoteNumber: quoteNum, date: date, validUntil: validUntil };
+      }
+
+      var totalArea = 0;
+      for (var i = 0; i < zones.length; i++) {
+        var zIds = zones[i].regionGeometryIds || [];
+        for (var k = 0; k < zIds.length; k++) {
+          var zg = geo(zIds[k]);
+          if (zg) totalArea += compute.geometryArea(zg) / 1000000;
+        }
+      }
+      var totalBarrier = 0;
+      for (var i = 0; i < barriers.length; i++) {
+        var bIds = barriers[i].lineGeometryIds || [];
+        for (var k = 0; k < bIds.length; k++) {
+          var bg = geo(bIds[k]);
+          if (bg) totalBarrier += compute.geometryLength(bg) / 1000;
+        }
+      }
+
+      var REPELLER_PRICES = {
+        'solar-sonic': 350, 'battery-sonic': 220, 'vibration-stake': 180,
+        'force-field-emitter': 4900, 'turbolaser': 12500, 'ion-pulse': 7800
+      };
+      var REPELLER_NAMES  = {
+        'solar-sonic':         'SolarMole 300 -- solarni sonicky plasic',
+        'battery-sonic':       'VibratMole Duo -- bateriovy sonicky plasic',
+        'vibration-stake':     'EcoVib -- vibracni kolik',
+        'force-field-emitter': 'NovaStar SFE-1 -- generator siloveho pole',
+        'turbolaser':          'TurboLazer Krtex-IX -- turbolaserova baterie',
+        'ion-pulse':           'Ionovy Pulzator IM-6 -- ionovy kanon'
+      };
+      var FLOOD_PRICES  = {
+        'auto': 2890, 'manual': 890,
+        'plasma-torpedo': 8500, 'tractor-beam': 15900
+      };
+      var FLOOD_NAMES   = {
+        'auto':           'HydroMole Auto -- automaticky zaplavovac krtincu',
+        'manual':         'FloodKit -- rucni zaplavovaci sada',
+        'plasma-torpedo': 'AquaPlasma T-5 -- plazmovy torpedomed krtincu',
+        'tractor-beam':   'TraktorKrtek 3000 -- traktorovy svazek'
+      };
+      var BARRIER_PRICES = {
+        'pe-net': 45, 'galvanized-net': 89,
+        'force-barrier': 890, 'transphasic-mesh': 250, 'duranium-net': 180
+      };
+      var BARRIER_NAMES  = {
+        'pe-net':           'PE barierova sit 100 cm',
+        'galvanized-net':   'Pozinkovana barierova sit 50 cm',
+        'force-barrier':    'NovaStar FBG-3 -- fazova barierova baterie',
+        'transphasic-mesh': 'TransMesh ST-IV -- transphasicka sit',
+        'duranium-net':     'DuraNorm -- duraniumova sit'
+      };
+
+      var subtotal = 0;
+      var repellerLines = [];
+      var floodLines    = [];
+      var barrierLines  = [];
+      var serviceLines  = [];
+
+      function fmt(n) {
+        return n.toLocaleString ? n.toLocaleString('cs-CZ') : String(n);
+      }
+      function addLine(arr, item, qty, unit, unitPrice) {
+        if (qty <= 0) return;
+        var price = qty * unitPrice;
+        subtotal += price;
+        arr.push({ item: item, qty: qty, unit: unit,
+                   unitPrice: fmt(unitPrice), price: fmt(price) });
+      }
+
+      if (c.useRepellers) {
+        var rqty = c.repellerCount > 0 ? c.repellerCount : repellers.length;
+        addLine(repellerLines, REPELLER_NAMES[c.repellerModel] || 'Plasic', rqty, 'ks',
+                REPELLER_PRICES[c.repellerModel] || 350);
+      }
+      if (c.useFlooding) {
+        var fqty = c.floodPointCount > 0 ? c.floodPointCount : floods.length;
+        addLine(floodLines, FLOOD_NAMES[c.floodingType] || 'Zaplavovac', fqty, 'ks',
+                FLOOD_PRICES[c.floodingType] || 2890);
+      }
+      if (c.useBarrier) {
+        var blen = c.barrierLength > 0 ? c.barrierLength : totalBarrier;
+        addLine(barrierLines, BARRIER_NAMES[c.barrierType] || 'Sit', blen, 'bm',
+                BARRIER_PRICES[c.barrierType] || 45);
+        if (c.includeInstallation && blen > 0) {
+          addLine(barrierLines, 'Instalace barierove site', blen, 'bm', 180);
+        }
+      }
+      if (c.includeInstallation) {
+        addLine(serviceLines, 'Profesionalni instalace a uvedeni do provozu', 1, 'navsteva', 1200);
+      }
+      if (c.includeAnnualService) {
+        addLine(serviceLines, 'Rocni servisni smlouva', 1, 'rok', 3600);
+      }
+
+      var vat   = Math.round(subtotal * 0.21);
+      var total = subtotal + vat;
+
+      return {
+        noConfig:        false,
+        quoteNumber:     quoteNum,
+        date:            date,
+        validUntil:      validUntil,
+        clientName:      c.clientName || 'Zakaznik',
+        propertyAddress: c.propertyAddress || 'Adresa neuvedena',
+        gardenAreaStr:   (c.gardenArea > 0 ? c.gardenArea : totalArea).toFixed(1),
+        moundCount:      c.moleMoundCount > 0 ? c.moleMoundCount : mounds.length,
+        deviceCount:     repellers.length + floods.length,
+        repellerLines:   repellerLines,
+        floodLines:      floodLines,
+        barrierLines:    barrierLines,
+        serviceLines:    serviceLines,
+        subtotalStr:     fmt(subtotal),
+        vatStr:          fmt(vat),
+        totalStr:        fmt(total)
+      };
